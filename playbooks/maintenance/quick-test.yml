@@ -1,66 +1,150 @@
----
-- name: ⚡ 快速系统测试
-  hosts: localhost
-  connection: local
+# 🚀 增强版快速测试 - 带详细报告
+- name: "⚡ 增强版快速系统测试"
+  hosts: all
+  gather_facts: yes
   become: no
   
+  vars:
+    test_results: []
+    report_file: "/tmp/semaphore-test-report.json"
+    
   tasks:
-    - name: 🎯 测试开始
+    - name: "🎯 测试开始"
       debug:
         msg: |
-          🚀 开始执行快速系统测试
+          🚀 开始执行增强版快速系统测试
           时间: {{ ansible_date_time.iso8601 }}
-          执行主机: {{ ansible_hostname }}
-    
-    - name: 📁 创建测试目录
-      file:
-        path: /tmp/semaphore-test
-        state: directory
-        mode: '0755'
-    
-    - name: 📝 创建测试文件
-      copy:
-        content: |
-          Semaphore 测试文件
-          创建时间: {{ ansible_date_time.iso8601 }}
-          主机名: {{ ansible_hostname }}
-          用户: {{ ansible_user_id }}
-        dest: /tmp/semaphore-test/test-{{ ansible_date_time.epoch }}.txt
-        mode: '0644'
-      register: test_file
-    
-    - name: ✅ 验证文件创建
-      stat:
-        path: "{{ test_file.dest }}"
-      register: file_check
-      
-    - name: 📋 显示文件信息
-      debug:
-        msg: |
-          文件路径: {{ test_file.dest }}
-          文件大小: {{ file_check.stat.size }} 字节
-          创建时间: {{ file_check.stat.ctime }}
-          权限: {{ file_check.stat.mode }}
-    
-    - name: 🧪 执行系统命令测试
+          执行主机: {{ inventory_hostname }}
+          操作系统: {{ ansible_distribution }} {{ ansible_distribution_version }}
+
+    - name: "📊 收集系统基础信息"
+      set_fact:
+        system_info:
+          hostname: "{{ inventory_hostname }}"
+          os: "{{ ansible_distribution }} {{ ansible_distribution_version }}"
+          kernel: "{{ ansible_kernel }}"
+          architecture: "{{ ansible_architecture }}"
+          cpu_cores: "{{ ansible_processor_vcpus }}"
+          memory_mb: "{{ ansible_memtotal_mb }}"
+          uptime: "{{ ansible_uptime_seconds }}"
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+
+    - name: "💾 检查磁盘空间"
       shell: |
-        echo "=== 系统信息 ==="
-        whoami
-        pwd
-        date
-        echo "=== 测试完成 ==="
-      register: cmd_output
-      
-    - name: 📊 显示命令输出
-      debug:
-        var: cmd_output.stdout_lines
-    
-    - name: 🎉 测试完成
+        df -h / | tail -1 | awk '{print $4 " 可用 / " $2 " 总计 (" $5 " 已使用)"}'
+      register: disk_info
+      changed_when: false
+
+    - name: "🌡️ 检查系统负载"
+      shell: |
+        uptime | awk -F'load average:' '{print $2}' | sed 's/^ *//'
+      register: load_info
+      changed_when: false
+
+    - name: "🔗 网络连通性测试"
+      ping:
+        data: "Semaphore 网络测试"
+      register: ping_result
+
+    - name: "📁 文件系统测试"
+      block:
+        - name: "创建测试目录"
+          file:
+            path: "/tmp/semaphore-test"
+            state: directory
+            mode: '0755'
+          register: dir_result
+
+        - name: "创建测试文件"
+          copy:
+            content: |
+              Semaphore 测试文件
+              创建时间: {{ ansible_date_time.iso8601 }}
+              主机: {{ inventory_hostname }}
+              测试ID: {{ 999999 | random }}
+            dest: "/tmp/semaphore-test/test-{{ ansible_date_time.epoch }}.txt"
+            mode: '0644'
+          register: file_result
+
+        - name: "验证文件创建"
+          stat:
+            path: "{{ file_result.dest }}"
+          register: file_stat
+
+    - name: "🧮 汇总测试结果"
+      set_fact:
+        test_summary:
+          test_name: "增强版快速系统测试"
+          execution_time: "{{ ansible_date_time.iso8601 }}"
+          host_info: "{{ system_info }}"
+          disk_space: "{{ disk_info.stdout }}"
+          system_load: "{{ load_info.stdout }}"
+          network_test: "{{ 'PASS' if ping_result is succeeded else 'FAIL' }}"
+          file_system_test: "{{ 'PASS' if file_stat.stat.exists else 'FAIL' }}"
+          test_file_path: "{{ file_result.dest | default('N/A') }}"
+          overall_status: "{{ 'SUCCESS' if (ping_result is succeeded and file_stat.stat.exists) else 'FAILED' }}"
+
+    - name: "💾 保存测试报告"
+      copy:
+        content: "{{ test_summary | to_nice_json }}"
+        dest: "{{ report_file }}"
+        mode: '0644'
+      register: report_saved
+
+    - name: "📋 显示详细测试报告"
       debug:
         msg: |
-          ✅ 快速测试执行完成！
-          📁 测试文件: {{ test_file.dest }}
-          🕐 执行时间: {{ ansible_date_time.iso8601 }}
           
-          💡 提示: 可以通过以下命令查看测试文件:
-          cat {{ test_file.dest }}
+          ╔══════════════════════════════════════════════════════════════╗
+          ║                    🚀 SEMAPHORE 测试报告                      ║
+          ╠══════════════════════════════════════════════════════════════╣
+          ║ 📅 执行时间: {{ test_summary.execution_time }}
+          ║ 🖥️  主机名称: {{ test_summary.host_info.hostname }}
+          ║ 🐧 操作系统: {{ test_summary.host_info.os }}
+          ║ 💻 CPU核心: {{ test_summary.host_info.cpu_cores }} 核
+          ║ 💾 内存大小: {{ test_summary.host_info.memory_mb }} MB
+          ║ 💿 磁盘空间: {{ test_summary.disk_space }}
+          ║ 📊 系统负载: {{ test_summary.system_load }}
+          ║ 🌐 网络测试: {{ test_summary.network_test }}
+          ║ 📁 文件测试: {{ test_summary.file_system_test }}
+          ║ 📄 测试文件: {{ test_summary.test_file_path }}
+          ║ 📊 整体状态: {{ test_summary.overall_status }}
+          ╚══════════════════════════════════════════════════════════════╝
+          
+          📄 详细报告已保存至: {{ report_file }}
+          
+          🔍 查看报告命令:
+          cat {{ report_file }} | jq '.'
+
+    - name: "🎉 测试完成通知"
+      debug:
+        msg: |
+          ✅ 增强版快速测试执行完成！
+          
+          📊 测试结果摘要:
+          • 主机: {{ test_summary.host_info.hostname }}
+          • 状态: {{ test_summary.overall_status }}
+          • 网络: {{ test_summary.network_test }}
+          • 文件系统: {{ test_summary.file_system_test }}
+          
+          📁 报告文件: {{ report_file }}
+          📝 测试文件: {{ test_summary.test_file_path }}
+          
+          🎯 下一步操作:
+          1. 查看详细报告: cat {{ report_file }}
+          2. 清理测试文件: rm -rf /tmp/semaphore-test
+          3. 运行其他测试: 选择不同的 Playbook
+
+      when: test_summary.overall_status == "SUCCESS"
+
+    - name: "❌ 测试失败通知"
+      debug:
+        msg: |
+          ❌ 测试执行失败！
+          
+          请检查以下项目:
+          • 网络连通性: {{ test_summary.network_test }}
+          • 文件系统权限: {{ test_summary.file_system_test }}
+          
+          📄 详细信息请查看: {{ report_file }}
+      when: test_summary.overall_status == "FAILED"

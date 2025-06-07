@@ -1,0 +1,66 @@
+---
+- name: ⚡ 快速系统测试
+  hosts: localhost
+  connection: local
+  become: no
+  
+  tasks:
+    - name: 🎯 测试开始
+      debug:
+        msg: |
+          🚀 开始执行快速系统测试
+          时间: {{ ansible_date_time.iso8601 }}
+          执行主机: {{ ansible_hostname }}
+    
+    - name: 📁 创建测试目录
+      file:
+        path: /tmp/semaphore-test
+        state: directory
+        mode: '0755'
+    
+    - name: 📝 创建测试文件
+      copy:
+        content: |
+          Semaphore 测试文件
+          创建时间: {{ ansible_date_time.iso8601 }}
+          主机名: {{ ansible_hostname }}
+          用户: {{ ansible_user_id }}
+        dest: /tmp/semaphore-test/test-{{ ansible_date_time.epoch }}.txt
+        mode: '0644'
+      register: test_file
+    
+    - name: ✅ 验证文件创建
+      stat:
+        path: "{{ test_file.dest }}"
+      register: file_check
+      
+    - name: 📋 显示文件信息
+      debug:
+        msg: |
+          文件路径: {{ test_file.dest }}
+          文件大小: {{ file_check.stat.size }} 字节
+          创建时间: {{ file_check.stat.ctime }}
+          权限: {{ file_check.stat.mode }}
+    
+    - name: 🧪 执行系统命令测试
+      shell: |
+        echo "=== 系统信息 ==="
+        whoami
+        pwd
+        date
+        echo "=== 测试完成 ==="
+      register: cmd_output
+      
+    - name: 📊 显示命令输出
+      debug:
+        var: cmd_output.stdout_lines
+    
+    - name: 🎉 测试完成
+      debug:
+        msg: |
+          ✅ 快速测试执行完成！
+          📁 测试文件: {{ test_file.dest }}
+          🕐 执行时间: {{ ansible_date_time.iso8601 }}
+          
+          💡 提示: 可以通过以下命令查看测试文件:
+          cat {{ test_file.dest }}

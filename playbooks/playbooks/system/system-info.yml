@@ -1,0 +1,40 @@
+---
+- name: 🔍 系统信息收集
+  hosts: all
+  gather_facts: yes
+  become: no
+  
+  tasks:
+    - name: 📊 显示系统基本信息
+      debug:
+        msg: |
+          主机名: {{ ansible_hostname }}
+          操作系统: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          内核版本: {{ ansible_kernel }}
+          架构: {{ ansible_architecture }}
+          CPU核心数: {{ ansible_processor_cores }}
+          内存总量: {{ ansible_memtotal_mb }}MB
+    
+    - name: 💾 检查磁盘使用情况
+      shell: df -h
+      register: disk_usage
+      
+    - name: 📋 显示磁盘使用情况
+      debug:
+        var: disk_usage.stdout_lines
+    
+    - name: 🔍 检查系统负载
+      shell: uptime
+      register: system_load
+      
+    - name: ⚡ 显示系统负载
+      debug:
+        var: system_load.stdout
+    
+    - name: 🌐 检查网络接口
+      shell: ip addr show | grep -E "^[0-9]+:" | cut -d: -f2 | tr -d ' '
+      register: network_interfaces
+      
+    - name: 🔗 显示网络接口
+      debug:
+        var: network_interfaces.stdout_lines

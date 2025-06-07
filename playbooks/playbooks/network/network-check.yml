@@ -1,0 +1,67 @@
+---
+- name: 🌐 网络连接诊断
+  hosts: all
+  become: no
+  
+  vars:
+    test_hosts:
+      - "8.8.8.8"
+      - "114.114.114.114"
+      - "baidu.com"
+      - "github.com"
+    test_ports:
+      - { host: "localhost", port: 22 }
+      - { host: "localhost", port: 80 }
+      - { host: "localhost", port: 443 }
+  
+  tasks:
+    - name: 🏓 Ping 测试
+      ping:
+        data: "{{ item }}"
+      loop: "{{ test_hosts }}"
+      register: ping_results
+      ignore_errors: yes
+      
+    - name: 📊 显示 Ping 测试结果
+      debug:
+        msg: |
+          目标: {{ item.item }}
+          状态: {{ '✅ 可达' if item.ping is defined else '❌ 不可达' }}
+      loop: "{{ ping_results.results }}"
+    
+    - name: 🔌 端口连通性测试
+      wait_for:
+        host: "{{ item.host }}"
+        port: "{{ item.port }}"
+        timeout: 5
+      loop: "{{ test_ports }}"
+      register: port_results
+      ignore_errors: yes
+      
+    - name: 🚪 显示端口测试结果
+      debug:
+        msg: |
+          地址: {{ item.item.host }}:{{ item.item.port }}
+          状态: {{ '✅ 开放' if not item.failed else '❌ 关闭' }}
+      loop: "{{ port_results.results }}"
+    
+    - name: 🔍 显示网络接口信息
+      shell: ip route show default
+      register: default_route
+      
+    - name: 🛣️ 显示默认路由
+      debug:
+        msg: "默认路由: {{ default_route.stdout }}"
+    
+    - name: 📡 DNS 解析测试
+      shell: nslookup {{ item }}
+      loop: ["baidu.com", "github.com"]
+      register: dns_results
+      ignore_errors: yes
+      
+    - name: 🔍 显示 DNS 解析结果
+      debug:
+        msg: |
+          域名: {{ item.item }}
+          解析: {{ '✅ 成功' if not item.failed else '❌ 失败' }}
+      loop: "{{ dns_results.results }}"

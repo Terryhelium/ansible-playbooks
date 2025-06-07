@@ -1,0 +1,53 @@
+---
+- name: 📊 服务监控检查
+  hosts: all
+  become: yes
+  
+  vars:
+    services_to_check:
+      - ssh
+      - docker
+      - nginx
+      - postgresql
+    
+  tasks:
+    - name: 🔍 检查关键服务状态
+      systemd:
+        name: "{{ item }}"
+      register: service_status
+      loop: "{{ services_to_check }}"
+      ignore_errors: yes
+      
+    - name: 📋 显示服务状态报告
+      debug:
+        msg: |
+          服务: {{ item.item }}
+          状态: {{ item.status.ActiveState | default('未安装') }}
+          运行状态: {{ item.status.SubState | default('N/A') }}
+      loop: "{{ service_status.results }}"
+      when: item.status is defined
+    
+    - name: 🚨 检查失败的服务
+      debug:
+        msg: "⚠️ 服务 {{ item.item }} 状态异常!"
+      loop: "{{ service_status.results }}"
+      when: item.status is defined and item.status.ActiveState != "active"
+    
+    - name: 💾 检查磁盘空间警告
+      shell: df -h | awk '$5 > 80 {print $0}'
+      register: disk_warning
+      
+    - name: 🚨 磁盘空间警告
+      debug:
+        msg: |
+          ⚠️ 以下分区磁盘使用率超过80%:
+          {{ disk_warning.stdout }}
+      when: disk_warning.stdout != ""
+    
+    - name: 🌡️ 检查系统负载
+      shell: uptime | awk -F'load average:' '{print $2}'
+      register: load_avg
+      
+    - name: 📊 显示系统负载
+      debug:
+        msg: "当前系统负载: {{ load_avg.stdout.strip() }}"

@@ -1,0 +1,57 @@
+---
+- name: 🐳 Docker 容器管理
+  hosts: docker_hosts
+  become: yes
+  
+  vars:
+    container_action: "status"  # status, start, stop, restart
+    container_name: "all"       # 容器名称或 "all"
+  
+  tasks:
+    - name: 🔍 检查 Docker 服务状态
+      systemd:
+        name: docker
+      register: docker_service
+      
+    - name: 📊 显示 Docker 服务状态
+      debug:
+        msg: "Docker 服务状态: {{ docker_service.status.ActiveState }}"
+    
+    - name: 📋 列出所有容器
+      shell: docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Image}}"
+      register: container_list
+      when: container_action == "status"
+      
+    - name: 🐳 显示容器列表
+      debug:
+        var: container_list.stdout_lines
+      when: container_action == "status"
+    
+    - name: 🚀 启动指定容器
+      docker_container:
+        name: "{{ container_name }}"
+        state: started
+      when: container_action == "start" and container_name != "all"
+      
+    - name: ⏹️ 停止指定容器
+      docker_container:
+        name: "{{ container_name }}"
+        state: stopped
+      when: container_action == "stop" and container_name != "all"
+    
+    - name: 🔄 重启指定容器
+      docker_container:
+        name: "{{ container_name }}"
+        state: started
+        restart: yes
+      when: container_action == "restart" and container_name != "all"
+    
+    - name: 🧹 清理未使用的 Docker 资源
+      shell: docker system prune -f
+      register: cleanup_result
+      when: container_action == "cleanup"
+      
+    - name: ✨ 显示清理结果
+      debug:
+        var: cleanup_result.stdout
+      when: container_action == "cleanup"

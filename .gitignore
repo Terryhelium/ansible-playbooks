@@ -23,3 +23,7 @@ logs/
 # Ansible 临时文件
 *.retry
 .ansible/
+
+# 备份文件
+*_backup*
+*.backup

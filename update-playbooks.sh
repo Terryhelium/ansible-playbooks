@@ -13,6 +13,19 @@ if [[ ! -f "docker-compose.yml" ]]; then
     exit 1
 fi
 
+# 检查 Docker 命令
+DOCKER_CMD=""
+if command -v "docker-compose" >/dev/null 2>&1; then
+    DOCKER_CMD="docker-compose"
+elif command -v "docker" >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+    DOCKER_CMD="docker compose"
+else
+    echo "❌ 错误: 未找到 docker-compose 或 docker compose 命令"
+    exit 1
+fi
+
+echo "🐳 使用 Docker 命令: $DOCKER_CMD"
+
 # 检查 Git 状态
 echo "🔍 检查 Git 状态..."
 if git status --porcelain | grep -q .; then
@@ -68,28 +81,67 @@ fi
 # 检查 Semaphore 容器状态
 echo ""
 echo "🐳 检查 Semaphore 服务状态..."
-if docker-compose ps | grep -q "Up"; then
+
+# 检查服务是否运行
+if $DOCKER_CMD ps | grep -q "semaphore"; then
     echo "✅ Semaphore 服务正在运行"
+    
+    # 显示服务状态
+    echo "📊 当前服务状态:"
+    $DOCKER_CMD ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
     
     # 可选：重启服务以应用更改
     read -p "🔄 是否重启 Semaphore 服务以应用更改? (y/N): " -n 1 -r
     echo
     if [[ $REPLY =~ ^[Yy]$ ]]; then
         echo "🔄 重启服务中..."
-        docker-compose restart semaphore_ui
+        $DOCKER_CMD restart
         echo "✅ 服务重启完成"
+        
+        # 等待服务启动
+        echo "⏳ 等待服务启动..."
+        sleep 5
+        
+        # 显示最终状态
+        echo "📊 重启后状态:"
+        $DOCKER_CMD ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
     fi
 else
-    echo "⚠️  Semaphore 服务未运行，是否启动?"
-    read -p "🚀 启动服务? (y/N): " -n 1 -r
-    echo
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
-        docker-compose up -d
-        echo "✅ 服务启动完成"
+    echo "⚠️  Semaphore 服务未运行"
+    
+    # 检查是否有停止的容器
+    if $DOCKER_CMD ps -a | grep -q "semaphore"; then
+        echo "🔍 发现已停止的 Semaphore 容器"
+        read -p "🚀 是否启动服务? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            echo "🚀 启动服务中..."
+            $DOCKER_CMD up -d
+            echo "✅ 服务启动完成"
+            
+            # 等待服务完全启动
+            echo "⏳ 等待服务完全启动..."
+            sleep 10
+            
+            # 显示服务状态
+            echo "📊 服务状态:"
+            $DOCKER_CMD ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+        fi
+    else
+        echo "❌ 未找到 Semaphore 容器，请检查 docker-compose.yml 配置"
     fi
 fi
 
 echo ""
 echo "🎉 更新完成！"
-echo "🌐 访问地址: http://localhost:3003"
-echo "👤 默认账号: admin / admin123456"
+echo ""
+echo "🌐 Semaphore 访问信息:"
+echo "   地址: http://localhost:3003"
+echo "   账号: admin"
+echo "   密码: admin123456"
+echo ""
+echo "📚 使用提示:"
+echo "   1. 修改 playbooks/ 下的文件后运行此脚本"
+echo "   2. 脚本会自动处理 Git 版本控制"
+echo "   3. 可选择重启服务应用更改"
+echo "   4. 支持远程仓库推送"

@@ -1,0 +1,152 @@
+---
+- name: Docker 服务器管理 (修复版)
+  hosts: docker_servers
+  become: yes
+  gather_facts: yes
+  
+  tasks:
+    - name: 显示主机信息
+      debug:
+        msg: |
+          🖥️ 主机: {{ inventory_hostname }}
+          📍 IP: {{ ansible_host }}
+          🐧 系统: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          
+    - name: 检查 Docker 服务状态
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+      register: docker_status
+
+    - name: 显示 Docker 服务信息
+      debug:
+        msg: |
+          🐳 Docker 服务状态: {{ docker_status.status.ActiveState }}
+          🔄 开机启动: {{ docker_status.status.UnitFileState }}
+          ⚡ 服务变更: {{ docker_status.changed }}
+
+    # 修复模板语法冲突
+    - name: 获取 Docker 版本信息
+      shell: 'docker info --format "{%raw%}{{.ServerVersion}}{%endraw%}"'
+      register: docker_version
+      ignore_errors: yes
+
+    - name: 获取 Docker 详细信息
+      shell: |
+        echo "=== Docker 基本信息 ==="
+        docker --version
+        echo "=== 运行中的容器 ==="
+        docker ps --format "table {%raw%}{{.Names}}\t{{.Status}}\t{{.Ports}}{%endraw%}" || echo "无运行中的容器"
+        echo "=== 镜像统计 ==="
+        docker images --format "table {%raw%}{{.Repository}}\t{{.Tag}}\t{{.Size}}{%endraw%}" | head -10
+        echo "=== 磁盘使用 ==="
+        docker system df
+      register: docker_info
+      ignore_errors: yes
+
+    - name: 显示 Docker 详细信息
+      debug:
+        msg: |
+          📦 Docker 版本: {{ docker_version.stdout | default('获取失败') }}
+          
+          📊 详细信息:
+          {{ docker_info.stdout | default('获取失败') }}
+
+    - name: 检查 Docker Compose
+      shell: docker-compose --version 2>/dev/null || docker compose version 2>/dev/null || echo "未安装"
+      register: compose_version
+      ignore_errors: yes
+
+    - name: 显示 Compose 信息
+      debug:
+        msg: "🔧 Docker Compose: {{ compose_version.stdout }}"
+
+    # 系统特定的 Docker 配置检查
+    - name: 检查 Docker 配置 (Debian/Ubuntu)
+      block:
+        - name: 检查 Docker 仓库配置
+          shell: apt-cache policy docker.io docker-ce 2>/dev/null || echo "无 Docker 仓库配置"
+          register: docker_repo_debian
+          
+        - name: 显示仓库信息
+          debug:
+            msg: |
+              📦 Debian/Ubuntu Docker 仓库:
+              {{ docker_repo_debian.stdout }}
+      when: ansible_os_family == "Debian"
+
+    - name: 检查 Docker 配置 (RedHat/Fedora)
+      block:
+        - name: 检查 Docker 仓库配置
+          shell: dnf repolist | grep -i docker || echo "无 Docker 仓库配置"
+          register: docker_repo_fedora
+          
+        - name: 显示仓库信息
+          debug:
+            msg: |
+              📦 RedHat/Fedora Docker 仓库:
+              {{ docker_repo_fedora.stdout }}
+      when: ansible_os_family == "RedHat"
+
+    - name: 检查 Docker 网络
+      shell: docker network ls
+      register: docker_networks
+      ignore_errors: yes
+
+    - name: 显示网络信息
+      debug:
+        msg: |
+          🌐 Docker 网络:
+          {{ docker_networks.stdout | default('获取失败') }}
+
+    # 修复存储驱动获取
+    - name: 检查 Docker 存储驱动
+      shell: 'docker info --format "{%raw%}{{.Driver}}{%endraw%}"'
+      register: docker_driver
+      ignore_errors: yes
+
+    - name: 获取 Docker 根目录
+      shell: 'docker info --format "{%raw%}{{.DockerRootDir}}{%endraw%}"'
+      register: docker_root_dir
+      ignore_errors: yes
+
+    - name: 显示存储信息
+      debug:
+        msg: |
+          💾 存储驱动: {{ docker_driver.stdout | default('未知') }}
+          📁 Docker 根目录: {{ docker_root_dir.stdout | default('/var/lib/docker') }}
+
+    # 新增：容器统计信息
+    - name: 获取容器统计
+      shell: |
+        echo "=== 容器统计 ==="
+        echo "运行中: $(docker ps -q | wc -l)"
+        echo "总容器: $(docker ps -aq | wc -l)"
+        echo "镜像数量: $(docker images -q | wc -l)"
+        echo "网络数量: $(docker network ls -q | wc -l)"
+        echo "数据卷: $(docker volume ls -q | wc -l)"
+      register: docker_stats
+      ignore_errors: yes
+
+    - name: 显示统计信息
+      debug:
+        msg: |
+          📈 Docker 统计:
+          {{ docker_stats.stdout | default('获取失败') }}
+
+    # 新增：系统资源使用
+    - name: 检查系统资源
+      shell: |
+        echo "=== 系统资源 ==="
+        echo "CPU: $(nproc) 核心"
+        echo "内存: $(free -h | grep '^Mem:' | awk '{print $2}') 总计, $(free -h | grep '^Mem:' | awk '{print $3}') 已用"
+        echo "磁盘: $(df -h / | tail -1 | awk '{print $2}') 总计, $(df -h / | tail -1 | awk '{print $3}') 已用"
+      register: system_resources
+      ignore_errors: yes
+
+    - name: 显示系统资源
+      debug:
+        msg: |
+          🖥️ 系统资源:
+          {{ system_resources.stdout | default('获取失败') }}

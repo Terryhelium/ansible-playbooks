@@ -1,0 +1,19 @@
+---
+- name: Test Connection to All Hosts
+  hosts: all
+  gather_facts: yes
+  tasks:
+    - name: Ping test
+      ping:
+      
+    - name: Get system info
+      setup:
+        filter: ansible_distribution*
+      
+    - name: Show host info
+      debug:
+        msg: |
+          Host: {{ inventory_hostname }}
+          IP: {{ ansible_host | default('N/A') }}
+          OS: {{ ansible_distribution | default('Unknown') }} {{ ansible_distribution_version | default('') }}
+          User: {{ ansible_user | default('N/A') }}

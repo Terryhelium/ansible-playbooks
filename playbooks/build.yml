@@ -1,0 +1,20 @@
+---
+- name: System Build Tasks
+  hosts: all
+  tasks:
+    - name: Show system info
+      debug:
+        msg: |
+          Building on: {{ inventory_hostname }}
+          OS: {{ ansible_distribution | default('Unknown') }}
+          Architecture: {{ ansible_architecture | default('Unknown') }}
+          
+    - name: Check disk space
+      shell: df -h /
+      register: disk_space
+      ignore_errors: yes
+      
+    - name: Show disk space
+      debug:
+        var: disk_space.stdout_lines
+      when: disk_space is succeeded

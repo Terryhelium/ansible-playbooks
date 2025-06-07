@@ -1,0 +1,88 @@
+---
+- name: 系统维护 Playbook
+  hosts: all
+  become: yes
+  vars:
+    maintenance_tasks:
+      - name: "系统更新"
+        enabled: true
+      - name: "清理日志"
+        enabled: true
+      - name: "磁盘清理"
+        enabled: true
+
+  tasks:
+    - name: 🔍 收集系统信息
+      setup:
+      tags: info
+
+    - name: 📊 显示系统基本信息
+      debug:
+        msg: |
+          🖥️  主机: {{ inventory_hostname }}
+          🏷️  系统: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          💾 内存: {{ (ansible_memtotal_mb/1024)|round(1) }}GB
+          💽 磁盘: {{ ansible_mounts | selectattr('mount', 'equalto', '/') | map(attribute='size_total') | first | filesizeformat }}
+          ⏰ 运行时间: {{ ansible_uptime_seconds | int | duration }}
+      tags: info
+
+    - name: 🔄 更新包缓存 (Debian/Ubuntu)
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+      when: 
+        - ansible_os_family == "Debian"
+        - maintenance_tasks[0].enabled
+      tags: update
+
+    - name: 🔄 更新包缓存 (RedHat/CentOS/Fedora)
+      dnf:
+        update_cache: yes
+      when: 
+        - ansible_os_family == "RedHat"
+        - maintenance_tasks[0].enabled
+      tags: update
+
+    - name: 🧹 清理系统日志
+      shell: |
+        journalctl --vacuum-time=7d
+        find /var/log -name "*.log" -mtime +7 -delete 2>/dev/null || true
+      when: maintenance_tasks[1].enabled
+      tags: cleanup
+
+    - name: 💽 清理包缓存 (Debian/Ubuntu)
+      apt:
+        autoclean: yes
+        autoremove: yes
+      when: 
+        - ansible_os_family == "Debian"
+        - maintenance_tasks[2].enabled
+      tags: cleanup
+
+    - name: 💽 清理包缓存 (RedHat/CentOS/Fedora)
+      dnf:
+        autoremove: yes
+      when: 
+        - ansible_os_family == "RedHat"
+        - maintenance_tasks[2].enabled
+      tags: cleanup
+
+    - name: 📈 检查磁盘使用情况
+      shell: df -h / | tail -1 | awk '{print $5}' | sed 's/%//'
+      register: disk_usage
+      tags: check
+
+    - name: ⚠️  磁盘使用警告
+      debug:
+        msg: "⚠️  警告: 根分区使用率 {{ disk_usage.stdout }}%，建议清理！"
+      when: disk_usage.stdout|int > 80
+      tags: check
+
+    - name: ✅ 维护完成
+      debug:
+        msg: |
+          🎉 系统维护完成！
+          📅 维护时间: {{ ansible_date_time.iso8601 }}
+          🖥️  主机: {{ inventory_hostname }}
+          💾 当前磁盘使用: {{ disk_usage.stdout }}%
+      tags: always

@@ -1,0 +1,12 @@
+---
+- name: Simple Ping Test
+  hosts: all
+  tasks:
+    - name: Ping all hosts
+      ping:
+      register: ping_result
+      
+    - name: Show results
+      debug:
+        msg: "✅ {{ inventory_hostname }} is reachable!"
+      when: ping_result is succeeded

@@ -1,0 +1,19 @@
+---
+- name: Deploy Application
+  hosts: all
+  tasks:
+    - name: Show deployment target
+      debug:
+        msg: |
+          Deploying to: {{ inventory_hostname }}
+          Target IP: {{ ansible_host | default('N/A') }}
+          
+    - name: Check system status
+      command: uptime
+      register: uptime_result
+      ignore_errors: yes
+      
+    - name: Show uptime
+      debug:
+        msg: "System uptime: {{ uptime_result.stdout }}"
+      when: uptime_result is succeeded

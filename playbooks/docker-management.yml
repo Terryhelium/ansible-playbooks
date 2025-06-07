@@ -1,0 +1,59 @@
+---
+- name: Docker 容器管理
+  hosts: all
+  become: yes
+  vars:
+    action: "status"  # status, cleanup, restart, update
+
+  tasks:
+    - name: 🐳 检查 Docker 服务状态
+      systemd:
+        name: docker
+      register: docker_service
+
+    - name: 📊 显示 Docker 信息
+      shell: |
+        echo "=== Docker 版本 ==="
+        docker --version
+        echo "=== 运行中的容器 ==="
+        docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+        echo "=== 镜像统计 ==="
+        docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}"
+        echo "=== 系统使用情况 ==="
+        docker system df
+      register: docker_info
+
+    - name: 🖥️  显示 Docker 状态
+      debug:
+        msg: "{{ docker_info.stdout_lines }}"
+
+    - name: 🧹 清理 Docker (当 action=cleanup)
+      shell: |
+        echo "清理未使用的容器..."
+        docker container prune -f
+        echo "清理未使用的镜像..."
+        docker image prune -f
+        echo "清理未使用的网络..."
+        docker network prune -f
+        echo "清理未使用的卷..."
+        docker volume prune -f
+      when: action == "cleanup"
+      register: cleanup_result
+
+    - name: 📋 显示清理结果
+      debug:
+        msg: "{{ cleanup_result.stdout_lines }}"
+      when: action == "cleanup"
+
+    - name: 🔄 重启 Docker 服务 (当 action=restart)
+      systemd:
+        name: docker
+        state: restarted
+      when: action == "restart"
+
+    - name: ✅ 操作完成
+      debug:
+        msg: |
+          🎉 Docker {{ action }} 操作完成！
+          📅 操作时间: {{ ansible_date_time.iso8601 }}
+          🖥️  主机: {{ inventory_hostname }}

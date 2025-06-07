@@ -1,0 +1,72 @@
+---
+# 📊 系统信息仪表板
+- name: "📊 系统信息仪表板"
+  hosts: all
+  gather_facts: yes
+  become: no
+  
+  tasks:
+    - name: "🖥️ 收集详细系统信息"
+      shell: |
+        echo "=== 系统概览 ==="
+        hostnamectl 2>/dev/null || echo "主机名: $(hostname)"
+        echo ""
+        echo "=== CPU 信息 ==="
+        lscpu | grep -E "(Architecture|CPU op-mode|CPU\(s\)|Model name|CPU MHz)" 2>/dev/null || echo "CPU: {{ ansible_processor_vcpus }} 核"
+        echo ""
+        echo "=== 内存信息 ==="
+        free -h 2>/dev/null || echo "内存: {{ ansible_memtotal_mb }} MB"
+        echo ""
+        echo "=== 磁盘信息 ==="
+        df -h | head -10
+        echo ""
+        echo "=== 网络信息 ==="
+        ip addr show 2>/dev/null | grep -E "(inet |UP)" || ifconfig 2>/dev/null | grep -E "(inet |UP)"
+        echo ""
+        echo "=== 进程信息 ==="
+        ps aux --sort=-%cpu | head -10
+        echo ""
+        echo "=== 系统负载 ==="
+        uptime
+      register: system_dashboard
+      changed_when: false
+
+    - name: "📋 显示系统仪表板"
+      debug:
+        msg: "{{ system_dashboard.stdout_lines }}"
+
+    - name: "💾 保存仪表板报告"
+      copy:
+        content: |
+          # 📊 系统信息仪表板报告
+          
+          **生成时间**: {{ ansible_date_time.iso8601 }}
+          **主机名称**: {{ inventory_hostname }}
+          **操作系统**: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          
+          ## 详细信息
+          
+          ```
+          {{ system_dashboard.stdout }}
+          ```
+          
+          ---
+          *报告由 Semaphore 自动生成*
+        dest: "/tmp/system-dashboard-{{ ansible_date_time.epoch }}.md"
+        mode: '0644'
+      register: dashboard_file
+
+    - name: "✅ 仪表板完成"
+      debug:
+        msg: |
+          📊 系统仪表板生成完成！
+          
+          📄 报告文件: {{ dashboard_file.dest }}
+          🔍 查看命令: cat {{ dashboard_file.dest }}
+          
+          📈 主要指标:
+          • 主机: {{ inventory_hostname }}
+          • 系统: {{ ansible_distribution }} {{ ansible_distribution_version }}
+          • CPU: {{ ansible_processor_vcpus }} 核
+          • 内存: {{ ansible_memtotal_mb }} MB
+          • 架构: {{ ansible_architecture }}

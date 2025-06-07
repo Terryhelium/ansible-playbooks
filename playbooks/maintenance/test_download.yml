@@ -1,0 +1,11 @@
+---
+- hosts: download
+  gather_facts: no
+  tasks:
+    - name: 测试连接
+      ping:
+
+    - name: 显示主机信息
+      debug:
+        msg: "成功连接到 {{ inventory_hostname }}，系统为 Ubuntu 20.04"
+

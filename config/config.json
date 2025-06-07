@@ -1,0 +1,37 @@
+{
+  "postgres": {
+    "host": "postgres",
+    "user": "semaphore",
+    "pass": "semaphore123",
+    "name": "semaphore",
+    "options": {
+      "sslmode": "disable"
+    }
+  },
+  "dialect": "postgres",
+  "port": ":3000",
+  "interface": "0.0.0.0",
+  "tmp_path": "/tmp/semaphore/",
+  "cookie_hash": "abcdefghijklmnopqrstuvwxyz123456",
+  "cookie_encryption": "abcdefghijklmnopqrstuvwxyz123456",
+  "access_key_encryption": "abcdefghijklmnopqrstuvwxyz123456",
+  "email_sender": "",
+  "email_host": "",
+  "email_port": "",
+  "web_host": "",
+  "ldap_binddn": "",
+  "ldap_bindpassword": "",
+  "ldap_server": "",
+  "ldap_searchdn": "",
+  "ldap_searchfilter": "",
+  "ldap_mappings": {
+    "dn": "",
+    "mail": "",
+    "uid": "",
+    "cn": ""
+  },
+  "telegram_token": "",
+  "telegram_chat": "",
+  "slack_url": "",
+  "max_parallel_tasks": 0
+}

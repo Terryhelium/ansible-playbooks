@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: semaphore_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: semaphore
+      POSTGRES_PASSWORD: semaphore123
+      POSTGRES_DB: semaphore
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - semaphore_network
+
+  semaphore:
+    image: semaphoreui/semaphore:latest
+    container_name: semaphore_ui
+    restart: unless-stopped
+    ports:
+      - "3003:3000"
+    environment:
+      SEMAPHORE_DB_DIALECT: postgres
+      SEMAPHORE_DB_HOST: postgres
+      SEMAPHORE_DB_PORT: 5432
+      SEMAPHORE_DB_USER: semaphore
+      SEMAPHORE_DB_PASS: semaphore123
+      SEMAPHORE_DB_NAME: semaphore
+      SEMAPHORE_WEB_HOST: 0.0.0.0
+      SEMAPHORE_WEB_PORT: 3000
+      SEMAPHORE_PLAYBOOK_PATH: /tmp/semaphore/
+      SEMAPHORE_ACCESS_KEY_ENCRYPTION: abcdefghijklmnopqrstuvwxyz123456
+      SEMAPHORE_ADMIN_PASSWORD: admin123456
+      SEMAPHORE_ADMIN_NAME: admin
+      SEMAPHORE_ADMIN_EMAIL: admin@localhost.local
+      SEMAPHORE_ADMIN: admin
+      SEMAPHORE_LDAP_ACTIVATED: "no"
+      SEMAPHORE_TELEGRAM_ALERT: "no"
+      SEMAPHORE_SLACK_ALERT: "no"
+      SEMAPHORE_EMAIL_ALERT: "no"
+    volumes:
+      - semaphore_data:/tmp/semaphore/
+      - ./config:/etc/semaphore
+      - ./playbooks:/opt/playbooks
+      - ./inventory:/opt/inventory
+      - ./ssh:/root/.ssh
+    networks:
+      - semaphore_network
+    depends_on:
+      - postgres
+
+volumes:
+  postgres_data:
+  semaphore_data:
+
+networks:
+  semaphore_network:

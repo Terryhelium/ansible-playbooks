@@ -1,0 +1,7 @@
+[user]
+    name = Semaphore
+    email = semaphore@localhost
+[safe]
+    directory = *
+[core]
+    filemode = false

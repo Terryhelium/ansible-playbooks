@@ -1,0 +1,25 @@
+# Semaphore 运行时数据
+semaphore_data/
+postgres_data/
+
+# 日志文件
+*.log
+logs/
+
+# 临时文件
+*.tmp
+*.bak
+*~
+
+# 环境变量文件
+.env.local
+.env.production
+
+# IDE 配置
+.vscode/
+.idea/
+.DS_Store
+
+# Ansible 临时文件
+*.retry
+.ansible/

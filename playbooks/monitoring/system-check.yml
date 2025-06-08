@@ -3,8 +3,7 @@
   hosts: all
   gather_facts: true
   vars:
-    # 安全模式开关 - 开启时禁用所有可能失败的操作
-    safe_mode: true
+    safe_mode: true  # 安全模式，避免执行可能失败的命令
 
   tasks:
     - name: 系统基础信息
@@ -15,7 +14,6 @@
           ██ 内核: {{ ansible_kernel }}
           ██ 运行: {{ (ansible_uptime_seconds / 86400) | round(2) }}天
 
-    # 全新设计的防火墙检测模块
     - name: 防火墙状态检测（零失败设计）
       block:
         - name: 服务存在性检测
@@ -34,7 +32,8 @@
               when: firewall_type == 'firewalld' and not safe_mode
 
             - name: 获取ufw状态
-              command: ufw status | grep -q "Status: active"
+              shell: >
+                ufw status 2>/dev/null | grep -q "Status: active"
               register: ufw_state
               changed_when: false
               ignore_errors: true
@@ -62,7 +61,6 @@
         - debug:
             msg: "防火墙状态: {{ firewall_status }}"
 
-    # 资源检测（100%安全）
     - name: 系统资源健康度
       block:
         - name: CPU负载检测
@@ -72,7 +70,7 @@
           ignore_errors: "{{ safe_mode }}"
 
         - name: 内存使用率
-          shell: free -m | awk '/Mem/{printf "%.1f%%", $3/$2*100}'
+          shell: free -m | awk '/Mem/{printf \"%.1f%%\", $3/$2*100}'
           register: mem_usage
           changed_when: false
           ignore_errors: "{{ safe_mode }}"
@@ -92,7 +90,6 @@
               根分区: {{ disk_usage.stdout | default('安全模式跳过') }}
               =======================================
 
-    # 最终报告（故障免疫）
     - name: 终极健康报告
       debug:
         msg: |

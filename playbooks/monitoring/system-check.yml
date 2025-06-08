@@ -7,7 +7,7 @@
     - name: 收集服务状态信息
       ansible.builtin.service_facts:
 
-    - name: 服务存在性检测
+    - name: 服务存在性检测，判断防火墙类型
       set_fact:
         firewall_type: >-
           {% if 'firewalld.service' in services %}
@@ -26,7 +26,8 @@
       when: firewall_type == 'firewalld'
 
     - name: 获取ufw状态
-      shell: ufw status | grep -q "Status: active"
+      shell: |
+        ufw status | grep -q "Status: active"
       register: ufw_state
       changed_when: false
       failed_when: false
@@ -49,15 +50,16 @@
       changed_when: false
       failed_when: false
 
-    - name: 内存使用率
+    - name: 内存使用率检测
       shell: |
         free -m | awk '/Mem/ {printf "%.1f%%", $3/$2*100}'
       register: mem_usage
       changed_when: false
       failed_when: false
 
-    - name: 磁盘空间
-      shell: df -h / | awk 'NR==2{print $5}'
+    - name: 根分区磁盘使用率检测
+      shell: |
+        df -h / | awk 'NR==2{print $5}'
       register: disk_usage
       changed_when: false
       failed_when: false
@@ -65,7 +67,9 @@
     - name: 输出检测结果
       debug:
         msg: |
+          =============== 资源状态 ===============
           防火墙状态: {{ firewall_status }}
           CPU负载: {{ cpu_load.stdout | default('未知') }}
           内存使用: {{ mem_usage.stdout | default('未知') }}
           根分区使用: {{ disk_usage.stdout | default('未知') }}
+          =======================================

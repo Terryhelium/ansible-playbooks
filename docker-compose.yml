@@ -1,6 +1,8 @@
+version: '3.8'
+
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgres:15
     container_name: semaphore_postgres
     restart: unless-stopped
     environment:
@@ -25,13 +27,10 @@ services:
       SEMAPHORE_DB_USER: semaphore
       SEMAPHORE_DB_PASS: semaphore123
       SEMAPHORE_DB_NAME: semaphore
-      SEMAPHORE_WEB_HOST: 0.0.0.0
-      SEMAPHORE_WEB_PORT: 3000
-      SEMAPHORE_PLAYBOOK_PATH: /tmp/semaphore/
-      SEMAPHORE_ACCESS_KEY_ENCRYPTION: abcdefghijklmnopqrstuvwxyz123456
+      SEMAPHORE_PLAYBOOK_PATH: /tmp/semaphore/playbooks
       SEMAPHORE_ADMIN_PASSWORD: admin123456
       SEMAPHORE_ADMIN_NAME: admin
-      SEMAPHORE_ADMIN_EMAIL: admin@localhost.local
+      SEMAPHORE_ADMIN_EMAIL: admin@localhost
       SEMAPHORE_ADMIN: admin
       SEMAPHORE_LDAP_ACTIVATED: "no"
       SEMAPHORE_TELEGRAM_ALERT: "no"
@@ -40,8 +39,8 @@ services:
     volumes:
       - semaphore_data:/tmp/semaphore/
       - ./config:/etc/semaphore
-      - ./playbooks:/opt/playbooks
-      - ./inventory:/opt/inventory
+      - ./playbooks:/tmp/semaphore/playbooks    # ✅ 正确的挂载路径
+      - ./inventory:/tmp/semaphore/inventory    # ✅ 正确的挂载路径
       - ./ssh:/root/.ssh
     networks:
       - semaphore_network

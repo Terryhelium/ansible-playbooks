@@ -1,0 +1,145 @@
+---
+- name: 系统基础信息检测
+  hosts: all
+  gather_facts: yes
+  tasks:
+    
+    # 系统基本信息
+    - name: 显示系统基本信息
+      debug:
+        msg:
+          - "主机名: {{ ansible_hostname }}"
+          - "操作系统: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "内核版本: {{ ansible_kernel }}"
+          - "架构: {{ ansible_architecture }}"
+          - "运行时间: {{ ansible_uptime_seconds | int // 3600 }}小时"
+
+    # CPU和内存信息
+    - name: CPU和内存信息
+      debug:
+        msg:
+          - "CPU核心数: {{ ansible_processor_vcpus }}"
+          - "CPU型号: {{ ansible_processor[2] | default('未知') }}"
+          - "总内存: {{ (ansible_memtotal_mb / 1024) | round(2) }}GB"
+          - "可用内存: {{ (ansible_memfree_mb / 1024) | round(2) }}GB"
+          - "内存使用率: {{ ((ansible_memtotal_mb - ansible_memfree_mb) / ansible_memtotal_mb * 100) | round(2) }}%"
+
+    # 磁盘使用情况
+    - name: 检查磁盘使用情况
+      shell: df -h | grep -E '^/dev/'
+      register: disk_usage
+      
+    - name: 显示磁盘使用情况
+      debug:
+        msg: "{{ disk_usage.stdout_lines }}"
+
+    # 网络接口信息
+    - name: 网络接口信息
+      debug:
+        msg:
+          - "网络接口: {{ ansible_interfaces | join(', ') }}"
+          - "默认网关: {{ ansible_default_ipv4.gateway | default('未配置') }}"
+          - "DNS服务器: {{ ansible_dns.nameservers | default(['未配置']) | join(', ') }}"
+
+    # 检查系统负载
+    - name: 检查系统负载
+      shell: uptime
+      register: system_load
+      
+    - name: 显示系统负载
+      debug:
+        msg: "{{ system_load.stdout }}"
+
+    # 检查重要服务状态
+    - name: 检查SSH服务状态
+      systemd:
+        name: sshd
+      register: ssh_status
+      
+    - name: 显示SSH服务状态
+      debug:
+        msg: "SSH服务状态: {{ ssh_status.status.ActiveState }}"
+
+    # 检查防火墙状态
+    - name: 检查防火墙状态 (firewalld)
+      shell: systemctl is-active firewalld
+      register: firewall_status
+      ignore_errors: yes
+      
+    - name: 显示防火墙状态
+      debug:
+        msg: "防火墙状态: {{ firewall_status.stdout | default('未安装或未运行') }}"
+
+    # 检查最近的系统更新
+    - name: 检查可用更新 (CentOS/RHEL)
+      shell: yum check-update | wc -l
+      register: yum_updates
+      ignore_errors: yes
+      when: ansible_os_family == "RedHat"
+      
+    - name: 检查可用更新 (Ubuntu/Debian)
+      shell: apt list --upgradable 2>/dev/null | wc -l
+      register: apt_updates
+      ignore_errors: yes
+      when: ansible_os_family == "Debian"
+      
+    - name: 显示可用更新数量
+      debug:
+        msg: "可用更新数量: {{ yum_updates.stdout | default(apt_updates.stdout) | default('无法检测') }}"
+
+    # 检查重要目录的磁盘空间
+    - name: 检查重要目录空间使用
+      shell: du -sh {{ item }} 2>/dev/null || echo "目录不存在或无权限访问"
+      register: dir_usage
+      loop:
+        - /var/log
+        - /tmp
+        - /home
+        - /opt
+      ignore_errors: yes
+      
+    - name: 显示目录使用情况
+      debug:
+        msg: "{{ item.item }}: {{ item.stdout }}"
+      loop: "{{ dir_usage.results }}"
+
+    # 检查最近的登录记录
+    - name: 检查最近登录记录
+      shell: last -n 5
+      register: recent_logins
+      
+    - name: 显示最近登录记录
+      debug:
+        msg: "{{ recent_logins.stdout_lines }}"
+
+    # 检查进程数量
+    - name: 检查进程数量
+      shell: ps aux | wc -l
+      register: process_count
+      
+    - name: 显示进程数量
+      debug:
+        msg: "当前运行进程数: {{ process_count.stdout }}"
+
+    # 检查端口监听情况
+    - name: 检查监听端口
+      shell: netstat -tlnp | grep LISTEN | head -10
+      register: listening_ports
+      ignore_errors: yes
+      
+    - name: 显示监听端口
+      debug:
+        msg: "{{ listening_ports.stdout_lines | default(['netstat命令不可用']) }}"
+
+    # 生成检测报告摘要
+    - name: 生成检测报告摘要
+      debug:
+        msg:
+          - "==================== 系统检测报告摘要 ===================="
+          - "主机: {{ ansible_hostname }} ({{ inventory_hostname }})"
+          - "系统: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+          - "CPU: {{ ansible_processor_vcpus }}核"
+          - "内存: {{ (ansible_memtotal_mb / 1024) | round(2) }}GB"
+          - "运行时间: {{ ansible_uptime_seconds | int // 3600 }}小时"
+          - "检测时间: {{ ansible_date_time.iso8601 }}"
+          - "========================================================"

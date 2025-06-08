@@ -60,15 +60,36 @@
       debug:
         msg: "SSH服务状态: {{ ssh_status.status.ActiveState }}"
 
-    # 检查防火墙状态
-    - name: 检查防火墙状态 (firewalld)
-      shell: systemctl is-active firewalld
-      register: firewall_status
-      ignore_errors: yes
-      
-    - name: 显示防火墙状态
-      debug:
-        msg: "防火墙状态: {{ firewall_status.stdout | default('未安装或未运行') }}"
+    # 改进后的防火墙检测（兼容所有Linux发行版）
+    - name: 检测防火墙状态 (通用)
+      block:
+        - name: 检测firewalld状态
+          shell: systemctl is-active firewalld 2>/dev/null || echo "未安装"
+          register: firewalld_status
+          when: ansible_os_family == "RedHat"
+          ignore_errors: yes
+          
+        - name: 检测ufw状态 (Ubuntu/Debian)
+          shell: ufw status 2>/dev/null | grep -q inactive && echo "未激活" || echo "已激活"
+          register: ufw_status
+          when: ansible_os_family == "Debian"
+          ignore_errors: yes
+          
+        - name: 检测iptables状态 (通用)
+          shell: iptables -L -n | grep -q "Chain INPUT" && echo "已配置" || echo "未配置"
+          register: iptables_status
+          ignore_errors: yes
+      always:
+        - name: 显示防火墙状态
+          debug:
+            msg: |
+              防火墙状态:
+              {% if ansible_os_family == "RedHat" %}
+              firewalld: {{ firewalld_status.stdout | default('未检测') }}
+              {% elif ansible_os_family == "Debian" %}
+              ufw: {{ ufw_status.stdout | default('未检测') }}
+              {% endif %}
+              iptables: {{ iptables_status.stdout | default('未检测') }}
 
     # 检查最近的系统更新
     - name: 检查可用更新 (CentOS/RHEL)
@@ -123,13 +144,13 @@
 
     # 检查端口监听情况
     - name: 检查监听端口
-      shell: netstat -tlnp | grep LISTEN | head -10
+      shell: ss -tlnp | head -10 || netstat -tlnp | head -10
       register: listening_ports
       ignore_errors: yes
       
     - name: 显示监听端口
       debug:
-        msg: "{{ listening_ports.stdout_lines | default(['netstat命令不可用']) }}"
+        msg: "{{ listening_ports.stdout_lines | default(['端口检测命令不可用']) }}"
 
     # 生成检测报告摘要
     - name: 生成检测报告摘要

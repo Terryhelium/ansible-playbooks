@@ -1,75 +1,100 @@
 ---
-- name: 终极可靠系统检测
+- name: 全面系统状态检测
   hosts: all
   gather_facts: true
 
   tasks:
-    - name: 收集服务状态信息
-      ansible.builtin.service_facts:
+    - name: 获取操作系统版本
+      ansible.builtin.shell: cat /etc/os-release
+      register: os_release
+      changed_when: false
 
-    - name: 服务存在性检测，判断防火墙类型
-      set_fact:
-        firewall_type: >-
-          {% if 'firewalld.service' in services %}
-            firewalld
-          {% elif 'ufw.service' in services %}
-            ufw
-          {% else %}
-            unknown
-          {% endif %}
+    - name: 获取内核版本
+      ansible.builtin.shell: uname -r
+      register: kernel_version
+      changed_when: false
 
-    - name: 获取firewalld状态
-      command: firewall-cmd --state
+    - name: 获取主机名和IP
+      ansible.builtin.shell: hostname && hostname -I
+      register: host_info
+      changed_when: false
+
+    - name: 获取CPU型号及核数
+      ansible.builtin.shell: lscpu | grep 'Model name\|^CPU(s):'
+      register: cpu_info
+      changed_when: false
+
+    - name: 获取内存总量
+      ansible.builtin.shell: free -h | grep Mem
+      register: mem_info
+      changed_when: false
+
+    - name: 获取磁盘分区详情
+      ansible.builtin.shell: lsblk
+      register: disk_info
+      changed_when: false
+
+    - name: 活跃网络接口和IP
+      ansible.builtin.shell: ip -br addr show up
+      register: net_info
+      changed_when: false
+
+    - name: 当前监听端口
+      ansible.builtin.shell: ss -tuln
+      register: port_info
+      changed_when: false
+
+    - name: 关键服务状态检测（nginx和mysql示例）
+      ansible.builtin.shell: systemctl is-active {{ item }}
+      with_items:
+        - nginx
+        - mysql
+      register: service_status
+      changed_when: false
+      failed_when: false
+
+    - name: SELinux状态
+      ansible.builtin.shell: getenforce
+      register: selinux_status
+      changed_when: false
+      failed_when: false
+
+    - name: 防火墙状态（firewalld示例）
+      ansible.builtin.shell: firewall-cmd --state
       register: fw_state
       changed_when: false
       failed_when: false
-      when: firewall_type == 'firewalld'
 
-    - name: 获取ufw状态
-      shell: |
-        ufw status | grep -q "Status: active"
-      register: ufw_state
-      changed_when: false
-      failed_when: false
-      when: firewall_type == 'ufw'
-
-    - name: 计算防火墙状态
-      set_fact:
-        firewall_status: >-
-          {% if firewall_type == 'firewalld' %}
-            {{ fw_state.stdout if fw_state.stdout is defined else '状态未知' }}
-          {% elif firewall_type == 'ufw' %}
-            {{ 'active' if ufw_state.rc == 0 else 'inactive' }}
-          {% else %}
-            未检测到标准防火墙
-          {% endif %}
-
-    - name: CPU负载检测
-      shell: cat /proc/loadavg | awk '{print $1,$2,$3}'
-      register: cpu_load
-      changed_when: false
-      failed_when: false
-
-    - name: 内存使用率检测
-      shell: |
-        free -m | awk '/Mem/ {printf "%.1f%%", $3/$2*100}'
-      register: mem_usage
-      changed_when: false
-      failed_when: false
-
-    - name: 根分区磁盘使用率检测
-      shell: |
-        df -h / | awk 'NR==2{print $5}'
-      register: disk_usage
-      changed_when: false
-      failed_when: false
-
-    - name: 输出检测结果
+    - name: 输出综合检测结果
       debug:
         msg: |
-          =============== 资源状态 ===============
-          防火墙状态: {{ firewall_status }}
-          CPU负载: {{ cpu_load.stdout | default('未知') }}
-          内存使用: {{ mem_usage.stdout | default('未知') }}
-          根分区使用: {{ disk_usage.stdout | default('未知') }}
-          =======================================
+          系统版本信息:
+          {{ os_release.stdout }}
+
+          内核版本: {{ kernel_version.stdout }}
+
+          主机名和IP: {{ host_info.stdout }}
+
+          CPU信息:
+          {{ cpu_info.stdout }}
+
+          内存信息:
+          {{ mem_info.stdout }}
+
+          磁盘分区:
+          {{ disk_info.stdout }}
+
+          活跃网络接口:
+          {{ net_info.stdout }}
+
+          监听端口:
+          {{ port_info.stdout }}
+
+          关键服务状态:
+          {% for svc in service_status.results %}
+            {{ svc.item }} : {{ svc.stdout }}
+          {% endfor %}
+
+          SELinux状态: {{ selinux_status.stdout }}
+
+          防火墙状态: {{ fw_state.stdout | default('无') }}

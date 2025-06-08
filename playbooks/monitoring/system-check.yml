@@ -2,108 +2,70 @@
 - name: 终极可靠系统检测
   hosts: all
   gather_facts: true
-  vars:
-    safe_mode: true  # 安全模式，避免执行可能失败的命令
 
   tasks:
-    - name: 系统基础信息
+    - name: 收集服务状态信息
+      ansible.builtin.service_facts:
+
+    - name: 服务存在性检测
+      set_fact:
+        firewall_type: >-
+          {% if 'firewalld.service' in services %}
+            firewalld
+          {% elif 'ufw.service' in services %}
+            ufw
+          {% else %}
+            unknown
+          {% endif %}
+
+    - name: 获取firewalld状态
+      command: firewall-cmd --state
+      register: fw_state
+      changed_when: false
+      failed_when: false
+      when: firewall_type == 'firewalld'
+
+    - name: 获取ufw状态
+      shell: ufw status | grep -q "Status: active"
+      register: ufw_state
+      changed_when: false
+      failed_when: false
+      when: firewall_type == 'ufw'
+
+    - name: 计算防火墙状态
+      set_fact:
+        firewall_status: >-
+          {% if firewall_type == 'firewalld' %}
+            {{ fw_state.stdout if fw_state.stdout is defined else '状态未知' }}
+          {% elif firewall_type == 'ufw' %}
+            {{ 'active' if ufw_state.rc == 0 else 'inactive' }}
+          {% else %}
+            未检测到标准防火墙
+          {% endif %}
+
+    - name: CPU负载检测
+      shell: cat /proc/loadavg | awk '{print $1,$2,$3}'
+      register: cpu_load
+      changed_when: false
+      failed_when: false
+
+    - name: 内存使用率
+      shell: |
+        free -m | awk '/Mem/ {printf "%.1f%%", $3/$2*100}'
+      register: mem_usage
+      changed_when: false
+      failed_when: false
+
+    - name: 磁盘空间
+      shell: df -h / | awk 'NR==2{print $5}'
+      register: disk_usage
+      changed_when: false
+      failed_when: false
+
+    - name: 输出检测结果
       debug:
         msg: |
-          ██ 主机: {{ ansible_hostname }} ({{ ansible_default_ipv4.address }})
-          ██ 系统: {{ ansible_distribution }} {{ ansible_distribution_version }}
-          ██ 内核: {{ ansible_kernel }}
-          ██ 运行: {{ (ansible_uptime_seconds / 86400) | round(2) }}天
-
-    - name: 防火墙状态检测（零失败设计）
-      block:
-        - name: 服务存在性检测
-          set_fact:
-            firewall_type: >-
-              {% if 'firewalld' in ansible_facts.services %}firewalld
-              {% elif 'ufw' in ansible_facts.services %}ufw
-              {% else %}unknown{% endif %}
-
-        - name: 安全状态获取
-          block:
-            - name: 获取firewalld状态
-              command: firewall-cmd --state
-              register: fw_state
-              changed_when: false
-              when: firewall_type == 'firewalld' and not safe_mode
-
-            - name: 获取ufw状态
-              shell: >
-                ufw status 2>/dev/null | grep -q "Status: active"
-              register: ufw_state
-              changed_when: false
-              ignore_errors: true
-              when: firewall_type == 'ufw' and not safe_mode
-
-          rescue:
-            - debug:
-                msg: "安全模式已跳过直接检测"
-
-        - name: 最终状态合成
-          set_fact:
-            firewall_status: >-
-              {% if firewall_type == 'firewalld' %}
-                {{ fw_state.stdout if fw_state is defined else '状态未知(安全模式)' }}
-              {% elif firewall_type == 'ufw' %}
-                {{ 'active' if ufw_state is defined and ufw_state.rc == 0 else 'inactive' }}
-              {% else %}
-                未检测到标准防火墙
-              {% endif %}
-
-      rescue:
-        - set_fact:
-            firewall_status: "检测失败-启用应急方案"
-      always:
-        - debug:
-            msg: "防火墙状态: {{ firewall_status }}"
-
-    - name: 系统资源健康度
-      block:
-        - name: CPU负载检测
-          shell: cat /proc/loadavg | awk '{print $1,$2,$3}'
-          register: cpu_load
-          changed_when: false
-          ignore_errors: "{{ safe_mode }}"
-
-        - name: 内存使用率
-          shell: free -m | awk '/Mem/{printf \"%.1f%%\", $3/$2*100}'
-          register: mem_usage
-          changed_when: false
-          ignore_errors: "{{ safe_mode }}"
-
-        - name: 磁盘空间
-          shell: df -h / | awk 'NR==2{print $5}'
-          register: disk_usage
-          changed_when: false
-          ignore_errors: "{{ safe_mode }}"
-
-      always:
-        - debug:
-            msg: |
-              =============== 资源状态 ===============
-              CPU负载: {{ cpu_load.stdout | default('安全模式跳过') }}
-              内存使用: {{ mem_usage.stdout | default('安全模式跳过') }}
-              根分区: {{ disk_usage.stdout | default('安全模式跳过') }}
-              =======================================
-
-    - name: 终极健康报告
-      debug:
-        msg: |
-          🔒 安全检测报告 ({{ ansible_date_time.iso8601 }})
-          --------------------------------------------
-          主机: {{ ansible_hostname }} ({{ ansible_system_vendor }})
-          系统: {{ ansible_distribution }} {{ ansible_distribution_version }}
-          --------------------------------------------
-          防火墙: {{ firewall_status }}
-          SELinux: {{ ansible_selinux.status | default('未启用') }}
-          --------------------------------------------
-          核心资源:
-            CPU: {{ ansible_processor_vcpus }}核 {{ cpu_load.stdout | default('N/A') }}
-            内存: {{ (ansible_memtotal_mb / 1024) | round(1) | default('?') }}GB 
-            存储: {{ ansible_mounts[0].size_total | default('未知') }}
-          --------------------------------------------
-          📌 检测模式: {{ '安全模式' if safe_mode else '完整模式' }}
+          防火墙状态: {{ firewall_status }}
+          CPU负载: {{ cpu_load.stdout | default('未知') }}
+          内存使用: {{ mem_usage.stdout | default('未知') }}
+          根分区使用: {{ disk_usage.stdout | default('未知') }}

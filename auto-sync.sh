@@ -1,5 +1,5 @@
 #!/bin/bash
-# 自动认证双向 Git 同步脚本
+# 修复版自动认证双向 Git 同步脚本
 # 文件名：auto-sync.sh
 
 cd /docker/semaphore
@@ -21,6 +21,9 @@ GITEA_REPO="admin/ansible-playbooks"
 setup_auto_auth() {
   echo -e "${BLUE}🔐 配置自动认证...${NC}"
   
+  # 配置 Git 拉取策略（消除警告）
+  git config pull.rebase false
+  
   # 配置凭证存储
   git config credential.helper store
   
@@ -39,53 +42,65 @@ generate_commit_message() {
   local changes=$(git status --porcelain)
   local playbook_changes=$(echo "$changes" | grep "playbooks/" | wc -l)
   local inventory_changes=$(echo "$changes" | grep "inventory/" | wc -l)
-  local other_changes=$(echo "$changes" | grep -v "playbooks/" | grep -v "inventory/" | wc -l)
+  local script_changes=$(echo "$changes" | grep -E "\.(sh|py)$" | wc -l)
+  local config_changes=$(echo "$changes" | grep -E "\.(yml|yaml|conf|cfg)$" | wc -l)
   
   local suggestions=()
   
+  # 根据文件类型智能建议
+  if [ $script_changes -gt 0 ]; then
+      suggestions+=("Add new automation scripts")
+      suggestions+=("Update deployment scripts")
+      suggestions+=("Fix script configuration")
+  fi
+  
   if [ $playbook_changes -gt 0 ]; then
-      suggestions+=("Update playbooks configuration")
-      suggestions+=("Add new automation playbook")
-      suggestions+=("Fix playbook tasks and handlers")
-      suggestions+=("Improve playbook error handling")
+      suggestions+=("Update Ansible playbooks")
+      suggestions+=("Add new server automation tasks")
+      suggestions+=("Fix playbook configuration")
   fi
   
   if [ $inventory_changes -gt 0 ]; then
       suggestions+=("Update server inventory")
-      suggestions+=("Add new hosts to inventory")
-      suggestions+=("Modify inventory groups")
+      suggestions+=("Add new hosts configuration")
   fi
   
-  if [ $other_changes -gt 0 ]; then
+  if [ $config_changes -gt 0 ]; then
       suggestions+=("Update configuration files")
-      suggestions+=("Add documentation")
-      suggestions+=("Fix general configuration")
+      suggestions+=("Improve service configuration")
   fi
   
-  # 默认建议
-  suggestions+=("Update Ansible configuration")
-  suggestions+=("Improve automation scripts")
-  suggestions+=("Add new server management tasks")
-  suggestions+=("Update deployment configuration")
+  # 通用建议
+  suggestions+=("Update project files")
+  suggestions+=("Add documentation and scripts")
+  suggestions+=("Improve automation tools")
+  suggestions+=("General maintenance update")
   
-  echo -e "${YELLOW}💡 提交信息建议：${NC}"
+  echo ""
+  echo -e "${YELLOW}💡 提交信息选项：${NC}"
+  echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  
   for i in "${!suggestions[@]}"; do
-      echo "   $((i+1))) ${suggestions[$i]}"
+      printf "   ${GREEN}%d)${NC} %s\n" $((i+1)) "${suggestions[$i]}"
   done
-  echo "   0) 自定义输入"
+  printf "   ${GREEN}0)${NC} %s\n" "自定义输入"
+  
+  echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo ""
   
   while true; do
-      read -p "选择提交信息 (0-${#suggestions[@]}): " choice
+      read -p "💬 选择提交信息 (0-${#suggestions[@]}): " choice
       
       if [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 0 ] && [ "$choice" -le "${#suggestions[@]}" ]; then
           if [ "$choice" -eq 0 ]; then
-              read -p "💬 请输入自定义提交信息: " custom_msg
+              echo ""
+              read -p "✏️  请输入自定义提交信息: " custom_msg
               if [ -n "$custom_msg" ]; then
                   echo "$custom_msg"
                   return 0
               else
-                  echo -e "${RED}❌ 提交信息不能为空${NC}"
+                  echo -e "${RED}❌ 提交信息不能为空，请重新选择${NC}"
+                  echo ""
                   continue
               fi
           else
@@ -94,6 +109,7 @@ generate_commit_message() {
           fi
       else
           echo -e "${RED}❌ 无效选择，请输入 0-${#suggestions[@]}${NC}"
+          echo ""
       fi
   done
 }
@@ -121,27 +137,29 @@ show_local_status() {
 # 函数：显示远程状态
 show_remote_status() {
   echo -e "${BLUE}🌐 远程仓库状态：${NC}"
-  echo "   地址：$(git remote get-url gitea)"
+  echo "   地址：$(git remote get-url gitea 2>/dev/null || echo '未配置')"
   
   echo "   正在获取远程信息..."
-  git fetch gitea >/dev/null 2>&1
-  
-  local_commit=$(git rev-parse HEAD)
-  remote_commit=$(git rev-parse gitea/master)
-  
-  if [ "$local_commit" = "$remote_commit" ]; then
-      echo -e "   状态：${GREEN}✅ 与远程同步${NC}"
+  if git fetch gitea >/dev/null 2>&1; then
+      local_commit=$(git rev-parse HEAD)
+      remote_commit=$(git rev-parse gitea/master 2>/dev/null)
+      
+      if [ "$local_commit" = "$remote_commit" ]; then
+          echo -e "   状态：${GREEN}✅ 与远程同步${NC}"
+      else
+          ahead=$(git rev-list --count HEAD..gitea/master 2>/dev/null || echo "0")
+          behind=$(git rev-list --count gitea/master..HEAD 2>/dev/null || echo "0")
+          
+          if [ $ahead -gt 0 ]; then
+              echo -e "   状态：${YELLOW}⬇️  远程有 $ahead 个新提交${NC}"
+          fi
+          
+          if [ $behind -gt 0 ]; then
+              echo -e "   状态：${YELLOW}⬆️  本地有 $behind 个未推送提交${NC}"
+          fi
+      fi
   else
-      ahead=$(git rev-list --count HEAD..gitea/master)
-      behind=$(git rev-list --count gitea/master..HEAD)
-      
-      if [ $ahead -gt 0 ]; then
-          echo -e "   状态：${YELLOW}⬇️  远程有 $ahead 个新提交${NC}"
-      fi
-      
-      if [ $behind -gt 0 ]; then
-          echo -e "   状态：${YELLOW}⬆️  本地有 $behind 个未推送提交${NC}"
-      fi
+      echo -e "   状态：${RED}❌ 无法连接远程仓库${NC}"
   fi
   echo ""
 }
@@ -152,18 +170,18 @@ pull_remote_changes() {
   
   if [ -n "$(git status --porcelain)" ]; then
       echo -e "${YELLOW}⚠️  暂存本地变更...${NC}"
-      git stash push -m "Auto-stash before pull $(date)"
+      git stash push -m "Auto-stash before pull $(date)" >/dev/null 2>&1
       stashed=true
   else
       stashed=false
   fi
   
-  if git pull gitea master; then
+  if git pull gitea master >/dev/null 2>&1; then
       echo -e "${GREEN}✅ 远程变更拉取成功${NC}"
       
       if [ "$stashed" = true ]; then
           echo -e "${BLUE}📦 恢复暂存的变更...${NC}"
-          git stash pop
+          git stash pop >/dev/null 2>&1
       fi
   else
       echo -e "${RED}❌ 拉取失败${NC}"
@@ -181,34 +199,57 @@ push_local_changes() {
       return 0
   fi
   
-  echo "变更文件："
-  git status --short | sed 's/^/   /'
+  echo ""
+  echo -e "${YELLOW}📁 变更文件列表：${NC}"
+  git status --short | while read line; do
+      echo "   $line"
+  done
   echo ""
   
-  # 添加主要文件
-  git add playbooks/ inventory/
+  # 询问是否添加所有文件
+  read -p "📦 是否添加所有变更文件？(Y/n): " add_all
+  if [[ ! $add_all =~ ^[Nn]$ ]]; then
+      git add .
+      echo -e "${GREEN}✅ 已添加所有文件${NC}"
+  else
+      # 选择性添加
+      echo "请选择要添加的文件类型："
+      echo "1) 只添加 playbooks/ 和 inventory/"
+      echo "2) 只添加脚本文件 (.sh, .py)"
+      echo "3) 手动选择"
+      read -p "选择 (1-3): " file_choice
+      
+      case $file_choice in
+          1) git add playbooks/ inventory/ ;;
+          2) git add *.sh *.py 2>/dev/null || true ;;
+          3) 
+              git status --porcelain | while read status file; do
+                  read -p "添加 $file？(y/N): " add_file
+                  if [[ $add_file =~ ^[Yy]$ ]]; then
+                      git add "$file"
+                  fi
+              done
+              ;;
+      esac
+  fi
   
-  # 检查其他文件
-  other_files=$(git status --porcelain | grep -v "^A" | grep -v "playbooks/" | grep -v "inventory/")
-  if [ -n "$other_files" ]; then
-      echo -e "${YELLOW}⚠️  其他变更文件：${NC}"
-      echo "$other_files" | sed 's/^/   /'
-      read -p "是否也要添加？(y/N): " add_others
-      if [[ $add_others =~ ^[Yy]$ ]]; then
-          git add .
-      fi
+  # 检查是否有文件被添加
+  if [ -z "$(git diff --cached --name-only)" ]; then
+      echo -e "${YELLOW}⚠️  没有文件被添加到暂存区${NC}"
+      return 0
   fi
   
   # 智能生成提交信息
   commit_msg=$(generate_commit_message)
   echo ""
-  echo -e "${GREEN}📝 使用提交信息：$commit_msg${NC}"
+  echo -e "${GREEN}📝 使用提交信息：${BLUE}$commit_msg${NC}"
+  echo ""
   
-  if git commit -m "$commit_msg"; then
+  if git commit -m "$commit_msg" >/dev/null 2>&1; then
       echo -e "${GREEN}✅ 提交成功${NC}"
       
       echo -e "${BLUE}🚀 推送到 Gitea...${NC}"
-      if git push gitea master; then
+      if git push gitea master >/dev/null 2>&1; then
           echo -e "${GREEN}✅ 推送成功${NC}"
       else
           echo -e "${RED}❌ 推送失败${NC}"
@@ -223,35 +264,44 @@ push_local_changes() {
 
 # 函数：快速同步
 quick_sync() {
-  echo -e "${GREEN}⚡ 快速双向同步...${NC}"
+  echo -e "${GREEN}⚡ 快速双向同步开始...${NC}"
   echo ""
   
   # 检查是否需要配置认证
-  if [ ! -f ~/.git-credentials ]; then
+  if [ ! -f ~/.git-credentials ] || ! git config --get credential.helper >/dev/null; then
       setup_auto_auth
   fi
   
   pull_remote_changes
   push_local_changes
   
-  echo -e "${GREEN}✅ 快速同步完成！${NC}"
+  echo -e "${GREEN}🎉 快速同步完成！${NC}"
 }
 
 # 函数：显示菜单
 show_menu() {
-  echo -e "${BLUE}📋 选择操作：${NC}"
-  echo "   1) 快速双向同步（推荐）"
-  echo "   2) 查看状态"
-  echo "   3) 只拉取远程"
-  echo "   4) 只推送本地"
-  echo "   5) 配置自动认证"
-  echo "   6) 查看提交历史"
-  echo "   7) 退出"
+  echo -e "${BLUE}📋 操作菜单：${NC}"
+  echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo -e "   ${GREEN}1)${NC} ⚡ 快速双向同步（推荐）"
+  echo -e "   ${GREEN}2)${NC} 👀 查看仓库状态"
+  echo -e "   ${GREEN}3)${NC} ⬇️  只拉取远程变更"
+  echo -e "   ${GREEN}4)${NC} ⬆️  只推送本地变更"
+  echo -e "   ${GREEN}5)${NC} 🔐 重新配置认证"
+  echo -e "   ${GREEN}6)${NC} 📚 查看提交历史"
+  echo -e "   ${GREEN}7)${NC} 🚪 退出"
+  echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
   echo ""
 }
 
 # 主程序
 main() {
+  # 清屏
+  clear
+  
+  echo -e "${GREEN}🔄 Git 双向同步工具${NC}"
+  echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+  echo ""
+  
   if ! git rev-parse --git-dir > /dev/null 2>&1; then
       echo -e "${RED}❌ 当前目录不是 Git 仓库${NC}"
       exit 1
@@ -288,21 +338,41 @@ main() {
       show_remote_status
       show_menu
       
-      read -p "请选择 (1-7): " choice
+      read -p "🎯 请选择操作 (1-7): " choice
       echo ""
       
       case $choice in
-          1) quick_sync ;;
-          2) ;; # 状态已显示
-          3) pull_remote_changes ;;
-          4) push_local_changes ;;
-          5) setup_auto_auth ;;
-          6) git log --oneline --graph -10 ;;
-          7) echo -e "${GREEN}👋 再见！${NC}"; exit 0 ;;
-          *) echo -e "${RED}❌ 无效选择${NC}" ;;
+          1) 
+              quick_sync 
+              ;;
+          2) 
+              echo -e "${BLUE}📊 状态信息已显示在上方${NC}"
+              ;;
+          3) 
+              pull_remote_changes 
+              ;;
+          4) 
+              push_local_changes 
+              ;;
+          5) 
+              setup_auto_auth 
+              ;;
+          6) 
+              echo -e "${BLUE}📚 最近10次提交历史：${NC}"
+              git log --oneline --graph --decorate -10
+              echo ""
+              ;;
+          7) 
+              echo -e "${GREEN}👋 感谢使用，再见！${NC}"
+              exit 0 
+              ;;
+          *) 
+              echo -e "${RED}❌ 无效选择，请输入 1-7${NC}"
+              ;;
       esac
       
-      read -p "按回车键继续..."
+      echo ""
+      read -p "⏸️  按回车键继续..." 
       clear
   done
 }
